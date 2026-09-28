@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monte Carlo Localization, Explained</title>
+<meta name="description" content="An interactive, simulation-first explanation of particle-filter robot localization (Monte Carlo Localization) on a real robot log: motion model, beam and likelihood-field sensor models, resampling, global localization and the kidnapped robot problem.">
+<meta name="theme-color" content="#f7f6f2">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%232a78d6'/%3E%3Ccircle cx='10' cy='12' r='2' fill='%23fff'/%3E%3Ccircle cx='20' cy='9' r='2' fill='%23fff'/%3E%3Ccircle cx='15' cy='18' r='3' fill='%23fff'/%3E%3Ccircle cx='23' cy='21' r='2' fill='%23fff'/%3E%3Ccircle cx='9' cy='22' r='1.5' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<script>
+  try { const t = localStorage.getItem('mcl-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-in">
+    <a class="brand" href="#top" aria-label="Monte Carlo Localization, top">
+      <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="15" fill="var(--accent)"/><circle cx="10" cy="12" r="2" fill="#fff"/><circle cx="20" cy="9" r="2" fill="#fff"/><circle cx="15" cy="18" r="3" fill="#fff"/><circle cx="23" cy="21" r="2" fill="#fff"/><circle cx="9" cy="22" r="1.5" fill="#fff"/></svg>
+      <span>Monte Carlo Localization</span>
+    </a>
+    <nav class="nav" aria-label="Chapters">
+      <a href="#problem">Problem</a>
+      <a href="#bayes">Particles</a>
+      <a href="#motion">Motion</a>
+      <a href="#sensor">Sensor</a>
+      <a href="#resampling">Resampling</a>
+      <a href="#playground">Playground</a>
+      <a href="#findings">Findings</a>
+      <a href="#changes">Changes</a>
+      <a href="#code">Code</a>
+    </nav>
+    <button class="icon-btn" id="theme-toggle" type="button" aria-label="Toggle dark mode">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+    </button>
+    <a class="icon-btn" href="https://github.com/sundarrajnitish/Monte-Carlo-Localization" aria-label="Source code on GitHub">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5a11.5 11.5 0 0 0-3.6 22.4c.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.2 1.2a11 11 0 0 1 5.8 0c2.2-1.5 3.2-1.2 3.2-1.2.6 1.6.2 2.8.1 3.1.8.8 1.2 1.9 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A11.5 11.5 0 0 0 12 .5z"/></svg>
+    </a>
+  </div>
+</header>
+
+<main id="top">
+<!-- =============================================================== HERO -->
+<div class="hero">
+  <div class="eyebrow">Probabilistic robotics · interactive</div>
+  <h1>Where am I? Ask a thousand guesses.</h1>
+  <p class="lede">A robot drives down a 28 m hallway. It has a map, wheel odometry that drifts, and a laser scanner that sees walls. It has <em>no idea</em> where it started. Below, a particle filter starts with a few thousand random guesses spread over the whole building and, scan by scan, lets the wrong ones die. This page explains every step of that process with simulations you can drive yourself, and reports what we measured.</p>
+
+  <div class="hero-stage widget" id="hero">
+    <div class="widget-head">
+      <div class="widget-title">Global localization on the real robot log</div>
+      <div class="widget-hint">Orange: particles (pose hypotheses). Blue: the estimate and its laser scan. <span id="hero-rate"></span></div>
+    </div>
+    <div class="canvas-wrap"><canvas></canvas>
+      <div class="overlay-tl" id="hero-read"></div>
+    </div>
+    <div class="btn-row" id="hero-ctl"></div>
+  </div>
+  <div class="stats" id="hero-stats"></div>
+</div>
+
+<!-- ============================================================ PROBLEM -->
+<section class="chapter" id="problem">
+  <div class="chapter-num">01 · THE PROBLEM</div>
+  <div class="prose">
+    <h2>A map, a log, and no GPS</h2>
+    <p>Everything on this page runs on one real dataset. The <strong>map</strong> is an occupancy grid of a hallway: 700 × 85 cells of 4 cm, so 28 m by 3.4 m, with doors and alcoves on both sides. The <strong>robot log</strong> is 45 seconds of driving: 522 odometry readings and 240 laser scans. Each scan has 180 beams, one per degree from the robot's right to its left, measured in centimetres. The laser sits 25 cm in front of the robot's centre, and beams that see nothing come back at the saturation value 8183 cm.</p>
+    <p>The catch: odometry is reported in the robot's own <em>odometry frame</em>, which starts wherever the wheels were first switched on. Its origin, and even its heading, have nothing to do with the map. Only <em>differences</em> between two odometry readings mean anything. Localization is the job of finding the transform between the two frames, and keeping it right as the wheels slip.</p>
+    <p>Before any algorithm, try it by hand. Drag the grey robot until the laser end-points land on the walls. The score is the log-likelihood the filter itself would compute.</p>
+  </div>
+
+  <div class="widget" id="w-manual">
+    <div class="widget-head">
+      <div class="widget-title">Localize it yourself</div>
+      <div class="widget-hint">Drag the robot body to move, the heading dot to rotate. Pinch-free zoom: <kbd>Ctrl</kbd> + scroll, drag empty space to pan.</div>
+    </div>
+    <div class="canvas-wrap"><canvas></canvas>
+      <div class="overlay-tr" id="manual-score"></div>
+    </div>
+    <div class="controls" id="manual-ctl"></div>
+    <div class="btn-row" id="manual-btn"></div>
+    <div class="legend-row"><span><i style="background:var(--truth)"></i>end-point close to a wall (&lt; 15 cm)</span><span><i style="background:var(--particle)"></i>end-point in free space</span><span><i class="line" style="border-color:var(--series-1)"></i>heat: best score over headings</span></div>
+  </div>
+  <div class="prose">
+    <p>If you press <b>Heat map</b> you will see the real difficulty: in a corridor, many poses explain one scan almost equally well. Walls on both sides pin down <em>y</em> and the heading, but sliding along the corridor barely changes the picture until a door or alcove passes by. Keep that in mind; it comes back in every finding below.</p>
+  </div>
+</section>
+
+<!-- ============================================================== BAYES -->
+<section class="chapter" id="bayes">
+  <div class="chapter-num">02 · BELIEF AS A CLOUD OF PARTICLES</div>
+  <div class="two-col">
+    <div class="prose">
+      <h2>The Bayes filter, one dimension first</h2>
+      <p>The robot never knows its pose <i>x<sub>t</sub></i>; it keeps a <strong>belief</strong>, a probability distribution over all poses. Every step of the Bayes filter does two things:</p>
+      <div class="eq">predict: bel̄(x<sub>t</sub>) = ∫ p(x<sub>t</sub> | u<sub>t</sub>, x<sub>t−1</sub>) bel(x<sub>t−1</sub>) dx<sub>t−1</sub></div>
+      <div class="eq">correct: bel(x<sub>t</sub>) = η · p(z<sub>t</sub> | x<sub>t</sub>, m) · bel̄(x<sub>t</sub>)</div>
+      <p>Motion spreads the belief out (we are less sure after moving); a measurement sharpens it. A <strong>particle filter</strong> represents the belief with <i>M</i> samples. Predicting means moving every sample through a noisy motion model. Correcting means giving each sample a weight <i>w = p(z | x)</i>. Then <strong>resampling</strong> draws a fresh set, with replacement, in proportion to the weights. Heavy particles are copied; light ones disappear.</p>
+      <p>Try it on the classic warm-up: a 15 m corridor with doors at 3, 5 and 10 m. The robot only senses "door" or "no door". Start with particles spread evenly, then alternate <b>Move</b> and <b>Sense</b>. Watch the cloud split into several hypotheses and then collapse onto one.</p>
+    </div>
+    <div>
+      <div class="algo" id="algo">
+        <div><b>MCL</b>(X<sub>t−1</sub>, u<sub>t</sub>, z<sub>t</sub>, m):</div>
+        <div class="ind" data-step="loop">for m = 1 … M:</div>
+        <div class="ind2" data-step="predict">x<sup>[m]</sup> ~ p(x<sub>t</sub> | u<sub>t</sub>, x<sup>[m]</sup><sub>t−1</sub>) <span class="muted">// motion model</span></div>
+        <div class="ind2" data-step="weight">w<sup>[m]</sup> = p(z<sub>t</sub> | x<sup>[m]</sup>, m) <span class="muted">// sensor model</span></div>
+        <div class="ind" data-step="neff">if N<sub>eff</sub> = 1 / Σ w² &lt; M/2:</div>
+        <div class="ind2" data-step="resample">X<sub>t</sub> ← low-variance resample(X, w)</div>
+        <div data-step="return">return X<sub>t</sub></div>
+      </div>
+      <p class="small muted" style="margin-top:8px">Probabilistic Robotics, Table 8.2, with adaptive resampling. The highlighted line follows the playground below as it runs.</p>
+    </div>
+  </div>
+
+  <div class="widget" id="w-1d">
+    <div class="widget-head">
+      <div class="widget-title">1-D corridor with three doors</div>
+      <div class="widget-hint" id="w1d-status"></div>
+    </div>
+    <div class="canvas-wrap"><canvas></canvas></div>
+    <div class="btn-row" id="w1d-btn"></div>
+    <div class="controls" id="w1d-ctl"></div>
+  </div>
+  <div class="prose">
+    <p>Two lessons carry straight over to the 2-D robot. First, a single measurement can be <em>consistent with several places</em>; the particle cloud holds all of them at once, something a single Gaussian (a Kalman filter) cannot do. Second, only <em>motion</em> breaks the tie: after moving 2 m, "door again" is only plausible for the hypothesis that started at the 3 m door.</p>
+  </div>
+</section>
+
+<!-- ============================================================= MOTION -->
+<section class="chapter" id="motion">
+  <div class="chapter-num">03 · PREDICTION</div>
+  <div class="prose">
+    <h2>The odometry motion model</h2>
+    <p>Between two odometry readings the robot has done three things: turned by <i>δ<sub>rot1</sub></i> to face its direction of travel, driven <i>δ<sub>trans</sub></i>, and turned again by <i>δ<sub>rot2</sub></i>. These three numbers do not depend on the odometry frame, so they can be applied to every particle in the map frame. Each is corrupted with zero-mean noise whose <strong>variance</strong> grows with the motion:</p>
+    <div class="eq">σ²<sub>rot1</sub> = α₁δ²<sub>rot1</sub> + α₂δ²<sub>trans</sub> &nbsp;·&nbsp; σ²<sub>trans</sub> = α₃δ²<sub>trans</sub> + α₄(δ²<sub>rot1</sub> + δ²<sub>rot2</sub>) &nbsp;·&nbsp; σ²<sub>rot2</sub> = α₁δ²<sub>rot2</sub> + α₂δ²<sub>trans</sub></div>
+    <p>Drag the target pose and play with the α's. Rotational noise bends the cloud into the famous <strong>banana</strong>: a small heading error, carried over a long distance, becomes a large sideways error.</p>
+  </div>
+  <div class="widget" id="w-motion">
+    <div class="widget-head">
+      <div class="widget-title">Sampling p(x<sub>t</sub> | u<sub>t</sub>, x<sub>t−1</sub>)</div>
+      <div class="widget-hint">Drag the green target, and its heading dot.</div>
+    </div>
+    <div class="canvas-wrap"><canvas></canvas><div class="overlay-tl" id="motion-read"></div></div>
+    <div class="btn-row" id="motion-btn"></div>
+    <div class="controls" id="motion-ctl"></div>
+  </div>
+  <div class="callout prose"><b>Two corner cases the textbook formula misses.</b> A pure rotation has no direction of travel, so <code>atan2(0, 0)</code> is meaningless; we set δ<sub>rot1</sub> = 0 and put the whole turn in δ<sub>rot2</sub>. Driving backwards would otherwise be modelled as "spin 180°, drive, spin 180°", which injects enormous rotational noise; we model it as a negative translation instead. Both happen in the real log.</div>
+</section>
+
+<!-- ============================================================= SENSOR -->
+<section class="chapter" id="sensor">
+  <div class="chapter-num">04 · CORRECTION</div>
+  <div class="prose">
+    <h2>Two ways to score a laser scan</h2>
+    <p>The sensor model <i>p(z | x, m)</i> answers: <em>if the robot were at pose x in map m, how likely is this scan?</em> Beams are treated as independent, so the scan likelihood is a product over beams. Two classic models:</p>
+    <h3>Beam model: ray-cast, then compare</h3>
+    <p>For every beam, cast a ray through the map to get the range <i>z*</i> the sensor <em>should</em> see, then score the measured <i>z</i> with a mixture of four effects: a Gaussian <b>hit</b> around <i>z*</i>, an exponential <b>short</b> reading (people, chair legs, anything not in the map), a spike at <b>max range</b> (no echo), and a small uniform <b>random</b> floor that keeps a single bad beam from zeroing a particle.</p>
+  </div>
+  <div class="widget" id="w-beam">
+    <div class="widget-head">
+      <div class="widget-title">Beam model p(z | z*) for one beam</div>
+      <div class="widget-hint">Max range shown as 1000 cm so the shape is visible; the real sensor saturates at 8183 cm.</div>
+    </div>
+    <div class="canvas-wrap"><canvas></canvas></div>
+    <div class="legend-row"><span><i class="line" style="border-color:var(--ink)"></i>mixture</span><span><i class="dash" style="border-color:var(--series-1)"></i>hit</span><span><i class="dash" style="border-color:var(--series-2)"></i>short</span><span><i class="dash" style="border-color:var(--series-3)"></i>random</span><span><i style="background:var(--series-4)"></i>max-range spike</span></div>
+    <div class="controls" id="beam-ctl"></div>
+  </div>
+  <div class="prose">
+    <h3>Likelihood field: skip the ray casting</h3>
+    <p>The beam model needs a ray cast per beam per particle, which is expensive, and its score jumps when a ray grazes a corner. The <strong>likelihood-field</strong> model (end-point model) instead projects each beam's end-point into the map and asks only: how far is it from the nearest obstacle? A distance transform of the map, computed once, answers that with a table lookup:</p>
+    <div class="eq">p(z<sub>k</sub> | x, m) = z<sub>hit</sub> · N(dist(end-point<sub>k</sub>); 0, σ) + z<sub>rand</sub> / z<sub>max</sub></div>
+  </div>
+  <div class="widget" id="w-field">
+    <div class="widget-head">
+      <div class="widget-title">The likelihood field of the hallway, with a real scan projected from the filter's pose</div>
+      <div class="widget-hint">Hover to read distance-to-wall. Bright = likely place for a beam to end.</div>
+    </div>
+    <div class="canvas-wrap"><canvas></canvas><div class="overlay-tr" id="field-read">hover the map</div></div>
+    <div class="controls" id="field-ctl"></div>
+  </div>
+  <div class="callout prose"><b>Work in log space.</b> 36 beams, each with a density around 10<sup>−2</sup>, multiply to about 10<sup>−72</sup>. Do that for 180 beams and double precision underflows to exactly zero for every particle. The filter sums log-likelihoods, subtracts the maximum, and only then exponentiates (log-sum-exp). The 2023 version summed raw densities instead of multiplying them, which quietly turns the product rule into something else entirely.</div>
+  <div class="callout prose"><b>Beams are not independent.</b> Neighbouring beams hit the same wall and share the same map errors, so treating 180 of them as independent makes the filter wildly over-confident. Two standard fixes are used here: use every 5th beam (36 per scan), and optionally divide the log-likelihood by a <em>temperature</em> T &gt; 1. The findings show T matters a lot for global localization.</div>
+</section>
+
+<!-- ========================================================= RESAMPLING -->
+<section class="chapter" id="resampling">
+  <div class="chapter-num">05 · SURVIVAL OF THE LIKELIEST</div>
+  <div class="prose">
+    <h2>Resampling without losing diversity</h2>
+    <p>After weighting, most particles carry almost no weight. Resampling draws <i>M</i> new particles, each picked with probability equal to its weight. Lay the normalised weights end to end on [0, 1) and throw pointers at them:</p>
+    <ul>
+      <li><b>Multinomial</b>: <i>M</i> independent random pointers. Simple, but a particle can be lost by bad luck even with a large weight.</li>
+      <li><b>Low-variance</b> (systematic): <em>one</em> random offset <i>r</i> ∈ [0, 1/M), then a comb of pointers <i>r</i> + m/M. O(M), and a particle with weight w is copied either ⌊Mw⌋ or ⌈Mw⌉ times, never anything wilder.</li>
+    </ul>
+    <p>Resampling is also not free: every resample throws away information and shrinks diversity. So we only do it when the <strong>effective sample size</strong> N<sub>eff</sub> = 1/Σw² drops below M/2.</p>
+  </div>
+  <div class="widget" id="w-resample">
+    <div class="widget-head">
+      <div class="widget-title">Pointers on the weight strip</div>
+      <div class="widget-hint" id="rs-status"></div>
+    </div>
+    <div class="canvas-wrap"><canvas></canvas></div>
+    <div class="btn-row" id="rs-btn"></div>
+    <div class="controls" id="rs-ctl"></div>
+  </div>
+</section>
+
+<!-- ========================================================= PLAYGROUND -->
+<section class="chapter" id="playground">
+  <div class="chapter-num">06 · EVERYTHING TOGETHER</div>
+  <div class="prose">
+    <h2>The playground</h2>
+    <p>This is the full filter, the same algorithm and parameters as the Python and MATLAB code in the repository, running in your browser. Replay the <b>real robot log</b>, or switch to <b>simulated robot</b> mode where the ground truth is known: drive it with the arrow keys (or the pad), or let it follow a tour of the hallway. Then break things: shrink the particle count, turn the temperature down, start globally, or <b>kidnap</b> the robot and see if the filter notices.</p>
+  </div>
+  <div class="widget" id="w-play">
+    <div class="widget-head">
+      <div class="seg" id="play-mode"><button data-mode="real" class="on">Real robot log</button><button data-mode="sim">Simulated robot</button></div>
+      <div class="widget-hint" id="play-hint"></div>
+    </div>
+    <div class="play-grid">
+      <div>
+        <div class="canvas-wrap"><canvas></canvas>
+          <div class="overlay-tl" id="play-read"></div>
+        </div>
+        <div class="btn-row" id="play-btn"></div>
+        <div class="legend-row" id="play-legend"></div>
+        <div class="mini-charts" id="play-charts"></div>
+      </div>
+      <div class="panel">
+        <h4>Filter</h4>
+        <div class="controls" id="play-ctl"></div>
+        <div id="play-drive" style="margin-top:14px"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =========================================================== FINDINGS -->
+<section class="chapter" id="findings">
+  <div class="chapter-num">07 · FINDINGS</div>
+  <div class="prose">
+    <h2>What we measured</h2>
+    <p>Every number below is produced by <code>python/scripts/run_experiments.py</code> with fixed random seeds. The real log has no ground truth, so for accuracy we also use <b>synthetic runs</b>: a ~33 m tour of the same hallway, with odometry corrupted by the motion model plus a slow heading drift, and scans drawn from the beam model by ray-casting the real map. Charts are interactive; hover for values.</p>
+  </div>
+  <div class="findings-grid" id="findings-grid"></div>
+</section>
+
+<!-- ============================================================ CHANGES -->
+<section class="chapter" id="changes">
+  <div class="chapter-num">08 · FROM THE 2023 VERSION</div>
+  <div class="prose">
+    <h2>What changed, and why it mattered</h2>
+    <p>The first version of this project (2023, MATLAB) had the right ingredients but never produced a working filter. It is kept, unmodified, in <code>legacy/</code> for reference. These were the problems, roughly in order of impact:</p>
+  </div>
+  <div class="table-wrap">
+  <table class="bugs">
+    <thead><tr><th>Where</th><th>What was wrong</th><th>Fix</th></tr></thead>
+    <tbody>
+      <tr><td>prediction</td><td>Particles were moved by <em>adding the robot's absolute odometry pose</em> to each particle every step, instead of sampling the relative motion. The cloud flew off the map within a few steps.</td><td>Sample (δ<sub>rot1</sub>, δ<sub>trans</sub>, δ<sub>rot2</sub>) per particle from the odometry motion model.</td></tr>
+      <tr><td>correction</td><td>The sensor model was called with the pose from the <em>log</em>, not the particle's pose, so every particle got the same weight and the scan carried no information.</td><td>Score each particle's own laser pose.</td></tr>
+      <tr><td>correction</td><td>Beam likelihoods were <em>summed</em> across beams (and the max-range term returned 8000 instead of 1), rather than multiplied.</td><td>Sum of log-likelihoods, normalised with log-sum-exp.</td></tr>
+      <tr><td>ray casting</td><td>Rays did not restart at the sensor for each beam, always stepped in +x, looped forever at slope = 1, and used stale hit coordinates when a ray left the map.</td><td>Vectorised sphere tracing over a distance transform.</td></tr>
+      <tr><td>likelihood field</td><td>Used a variable before defining it, indexed the grid as (x, y) instead of (row, col), and scored a point 25 cm from the robot rather than the beam end-point, so the measured range was never used.</td><td>End-point model over an exact Euclidean distance transform.</td></tr>
+      <tr><td>initialisation</td><td>x and y ranges were swapped, given in cells rather than cm, the heading range was stepped in whole radians, and weights started at 1 instead of 1/M.</td><td>Uniform in a box (cm, rad) with rejection of occupied cells, or uniform over all free space.</td></tr>
+      <tr><td>motion noise</td><td>α-terms were passed to <code>normrnd</code> as standard deviations although they are variances; all four α were 10<sup>−6</sup>, which is practically noise-free; the pure-rotation δ<sub>rot2</sub> had the wrong sign.</td><td>√variance, α tuned on data, corner cases for rotation and reversing.</td></tr>
+      <tr><td>data</td><td>Odometry from the <code>O</code> and <code>L</code> records was interleaved. The pose stamped on a scan lags the odometry stream by one reading, so the robot appeared to reverse direction 218 times and travel <b>2×</b> its real path.</td><td>Drive the motion model from the scan-stamped odometry only.</td></tr>
+      <tr><td>resampling</td><td>Resampled every step with un-normalised weights.</td><td>Normalised weights, resample only when N<sub>eff</sub> &lt; M/2.</td></tr>
+      <tr><td>coordinates</td><td>The map was plotted with <code>imagesc</code> (y down) while robot poses assumed y up; absolute Windows paths were hard-coded; the notebook in <code>Python Scripts/</code> was an HTML page saved with an <code>.ipynb</code> extension.</td><td>One documented frame (x right, y up, cm, origin bottom-left) in Python, MATLAB and JavaScript; relative paths.</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- =============================================================== CODE -->
+<section class="chapter" id="code">
+  <div class="chapter-num">09 · RUN IT YOURSELF</div>
+  <div class="two-col">
+    <div class="prose">
+      <h2>Three implementations, one algorithm</h2>
+      <p><b>Python</b> (<code>python/mcl</code>) is the reference: vectorised NumPy, unit-tested, and used for every finding on this page. <b>MATLAB</b> (<code>matlab/</code>) is toolbox-free and also runs in GNU Octave; on the real log it agrees with Python to about 1 cm on average. The <b>JavaScript</b> port (<code>docs/js/core.js</code>) powers this page.</p>
+      <p>All three share the same coordinate frame, parameters and design decisions: log-space weights, adaptive resampling, scan gating (a new scan is only used after 5 cm or 5° of motion, so a parked robot does not become over-confident by re-reading the same scan), and a robust pose estimate that averages only the dominant mode, because the plain weighted mean of a two-mode belief sits between the modes, usually inside a wall.</p>
+    </div>
+    <div>
+<pre><code># Python 3.10+
+git clone https://github.com/sundarrajnitish/Monte-Carlo-Localization
+cd Monte-Carlo-Localization/python
+pip install -r requirements.txt
+python -m pytest -q                    # unit tests
+python scripts/run_localization.py     # animate the real log
+python scripts/run_experiments.py      # every number on this page
+
+% MATLAB (no toolboxes) or GNU Octave
+cd matlab
+run_mcl        % filter the real log, animated
+test_mcl       % self-checks</code></pre>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <p><b>References.</b> S. Thrun, W. Burgard, D. Fox, <i>Probabilistic Robotics</i>, MIT Press, 2005 (ch. 4–6, 8). F. Dellaert, D. Fox, W. Burgard, S. Thrun, "Monte Carlo Localization for Mobile Robots", ICRA 1999. P. Felzenszwalb, D. Huttenlocher, "Distance Transforms of Sampled Functions", Theory of Computing, 2012.</p>
+  <p>Built by <a href="https://github.com/sundarrajnitish">Nitish Sundarraj</a>. Code and data: <a href="https://github.com/sundarrajnitish/Monte-Carlo-Localization">github.com/sundarrajnitish/Monte-Carlo-Localization</a>.</p>
+</footer>
+
+<script src="js/core.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/widgets-intro.js"></script>
+<script src="js/widgets-models.js"></script>
+<script src="js/playground.js"></script>
+<script src="js/findings.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
