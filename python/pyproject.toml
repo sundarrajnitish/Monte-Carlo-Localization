@@ -1,0 +1,13 @@
+[project]
+name = "mcl"
+version = "1.0.0"
+description = "Monte Carlo Localization (particle filter) on a 2-D occupancy grid"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.24", "scipy>=1.10", "matplotlib>=3.7"]
+
+[tool.setuptools]
+packages = ["mcl"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
