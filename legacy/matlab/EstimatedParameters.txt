@@ -1,0 +1,16 @@
+Estimated motion model parameters:
+
+alpha_1 = 1x10^-6 (rad^2/rad^2)
+alpha_2 = 1x10^-6 (rad^2/cm^2)
+alpha_3 = 1x10^-6 (cm^2/cm^2)
+alpha_4 = 1x10^-6 (cm^2/rad^2)
+
+Estimated beam model parameters:
+
+sigma = 5 (cm)
+lambda = 0.1 (cm^-1)
+
+Zshort = 0.09
+Zhit = 0.9
+Zmax = 0.01
+Zrand = 0.001
