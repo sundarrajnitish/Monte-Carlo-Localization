@@ -23,7 +23,7 @@ Widgets.motion = (root) => {
   UI.button(btn, 'Tuned (used here)', preset([0.02, 1e-5, 0.01, 1.0]));
   UI.button(btn, 'Slippery wheels', preset([0.02, 1e-5, 0.15, 1.0]));
   UI.button(btn, 'Bad gyro → banana', preset([0.02, 2e-4, 0.002, 1.0]));
-  UI.button(btn, 'Legacy α = 10⁻⁶', preset([1e-6, 1e-6, 1e-6, 1e-6]));
+  UI.button(btn, 'Almost noise-free', preset([1e-6, 1e-6, 1e-6, 1e-6]));
   UI.button(btn, '↻ Resample noise', () => { seed++; draw(); });
 
   function draw() {

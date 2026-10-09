@@ -31,7 +31,6 @@
       <a href="#resampling">Resampling</a>
       <a href="#playground">Playground</a>
       <a href="#findings">Findings</a>
-      <a href="#changes">Changes</a>
       <a href="#code">Code</a>
     </nav>
     <button class="icon-btn" id="theme-toggle" type="button" aria-label="Toggle dark mode">
@@ -182,7 +181,7 @@
     <div class="canvas-wrap"><canvas></canvas><div class="overlay-tr" id="field-read">hover the map</div></div>
     <div class="controls" id="field-ctl"></div>
   </div>
-  <div class="callout prose"><b>Work in log space.</b> 36 beams, each with a density around 10<sup>−2</sup>, multiply to about 10<sup>−72</sup>. Do that for 180 beams and double precision underflows to exactly zero for every particle. The filter sums log-likelihoods, subtracts the maximum, and only then exponentiates (log-sum-exp). The 2023 version summed raw densities instead of multiplying them, which quietly turns the product rule into something else entirely.</div>
+  <div class="callout prose"><b>Work in log space.</b> 36 beams, each with a density around 10<sup>−2</sup>, multiply to about 10<sup>−72</sup>. Do that for 180 beams and double precision underflows to exactly zero for every particle. The filter sums log-likelihoods, subtracts the maximum, and only then exponentiates (log-sum-exp).</div>
   <div class="callout prose"><b>Beams are not independent.</b> Neighbouring beams hit the same wall and share the same map errors, so treating 180 of them as independent makes the filter wildly over-confident. Two standard fixes are used here: use every 5th beam (36 per scan), and optionally divide the log-likelihood by a <em>temperature</em> T &gt; 1. The findings show T matters a lot for global localization.</div>
 </section>
 
@@ -249,35 +248,9 @@
   <div class="findings-grid" id="findings-grid"></div>
 </section>
 
-<!-- ============================================================ CHANGES -->
-<section class="chapter" id="changes">
-  <div class="chapter-num">08 · FROM THE 2023 VERSION</div>
-  <div class="prose">
-    <h2>What changed, and why it mattered</h2>
-    <p>The first version of this project (2023, MATLAB) had the right ingredients but never produced a working filter. It is kept, unmodified, in <code>legacy/</code> for reference. These were the problems, roughly in order of impact:</p>
-  </div>
-  <div class="table-wrap">
-  <table class="bugs">
-    <thead><tr><th>Where</th><th>What was wrong</th><th>Fix</th></tr></thead>
-    <tbody>
-      <tr><td>prediction</td><td>Particles were moved by <em>adding the robot's absolute odometry pose</em> to each particle every step, instead of sampling the relative motion. The cloud flew off the map within a few steps.</td><td>Sample (δ<sub>rot1</sub>, δ<sub>trans</sub>, δ<sub>rot2</sub>) per particle from the odometry motion model.</td></tr>
-      <tr><td>correction</td><td>The sensor model was called with the pose from the <em>log</em>, not the particle's pose, so every particle got the same weight and the scan carried no information.</td><td>Score each particle's own laser pose.</td></tr>
-      <tr><td>correction</td><td>Beam likelihoods were <em>summed</em> across beams (and the max-range term returned 8000 instead of 1), rather than multiplied.</td><td>Sum of log-likelihoods, normalised with log-sum-exp.</td></tr>
-      <tr><td>ray casting</td><td>Rays did not restart at the sensor for each beam, always stepped in +x, looped forever at slope = 1, and used stale hit coordinates when a ray left the map.</td><td>Vectorised sphere tracing over a distance transform.</td></tr>
-      <tr><td>likelihood field</td><td>Used a variable before defining it, indexed the grid as (x, y) instead of (row, col), and scored a point 25 cm from the robot rather than the beam end-point, so the measured range was never used.</td><td>End-point model over an exact Euclidean distance transform.</td></tr>
-      <tr><td>initialisation</td><td>x and y ranges were swapped, given in cells rather than cm, the heading range was stepped in whole radians, and weights started at 1 instead of 1/M.</td><td>Uniform in a box (cm, rad) with rejection of occupied cells, or uniform over all free space.</td></tr>
-      <tr><td>motion noise</td><td>α-terms were passed to <code>normrnd</code> as standard deviations although they are variances; all four α were 10<sup>−6</sup>, which is practically noise-free; the pure-rotation δ<sub>rot2</sub> had the wrong sign.</td><td>√variance, α tuned on data, corner cases for rotation and reversing.</td></tr>
-      <tr><td>data</td><td>Odometry from the <code>O</code> and <code>L</code> records was interleaved. The pose stamped on a scan lags the odometry stream by one reading, so the robot appeared to reverse direction 218 times and travel <b>2×</b> its real path.</td><td>Drive the motion model from the scan-stamped odometry only.</td></tr>
-      <tr><td>resampling</td><td>Resampled every step with un-normalised weights.</td><td>Normalised weights, resample only when N<sub>eff</sub> &lt; M/2.</td></tr>
-      <tr><td>coordinates</td><td>The map was plotted with <code>imagesc</code> (y down) while robot poses assumed y up; absolute Windows paths were hard-coded; the notebook in <code>Python Scripts/</code> was an HTML page saved with an <code>.ipynb</code> extension.</td><td>One documented frame (x right, y up, cm, origin bottom-left) in Python, MATLAB and JavaScript; relative paths.</td></tr>
-    </tbody>
-  </table>
-  </div>
-</section>
-
 <!-- =============================================================== CODE -->
 <section class="chapter" id="code">
-  <div class="chapter-num">09 · RUN IT YOURSELF</div>
+  <div class="chapter-num">08 · RUN IT YOURSELF</div>
   <div class="two-col">
     <div class="prose">
       <h2>Three implementations, one algorithm</h2>

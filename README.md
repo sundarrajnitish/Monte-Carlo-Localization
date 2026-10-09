@@ -52,7 +52,7 @@ Monte Carlo Localization (*Probabilistic Robotics*, Table 8.2) with:
 | 5 | MCL error is anisotropic: 5.4 cm along the corridor vs 2.7 cm across it. Its own particle spread (2.1 cm) is smaller than its RMSE (6.0 cm): the filter is over-confident because beams are not independent. Dead reckoning reaches 9.4 m of error over the same 33 m tour. |
 | 6 | Kidnapped robot: standard MCL recovers in **0 / 5** runs, augmented MCL in **5 / 5** (median 24 scans). |
 | 7 | Resampler choice barely changes RMSE at 200 particles; low-variance keeps the most distinct particles (39 vs 33–35 for multinomial). |
-| 8 | Data bug: odometry appears twice in the log (`O` records and stamped on `L` records, lagging by one reading). Interleaving them doubles the path (28.0 m vs 13.0 m) and fakes 218 reversals. The filter uses the scan-stamped odometry only. |
+| 8 | Odometry appears twice in the log (`O` records and stamped on `L` records, lagging by one reading). Merging them would double the path (28.0 m vs 13.0 m) and fake 218 reversals, so the filter uses the scan-stamped odometry only. |
 
 ![Real-log trajectories: MCL with both sensor models vs odometry only](results/real_tracking.png)
 
@@ -66,7 +66,6 @@ python/scripts/       run_localization.py (animate), run_experiments.py (all fin
 matlab/               toolbox-free MATLAB port, also runs in GNU Octave
 docs/                 the website (GitHub Pages), JS port in docs/js/core.js
 results/              results.json and figures written by run_experiments.py
-legacy/               the original 2023 code, unmodified, for comparison
 ```
 
 Coordinate frame everywhere: x right, y up, centimetres, origin at the map's
@@ -90,21 +89,6 @@ test_mcl     % self-checks
 ```
 
 Website locally: `python -m http.server -d docs` and open http://localhost:8000.
-
-## What changed from the 2023 version
-
-The original MATLAB code (in `legacy/`) never produced a working filter:
-
-* particles were moved by **adding the robot's absolute odometry pose** instead of sampling the relative motion;
-* the sensor model was evaluated at the **logged pose, not each particle's pose**, so all weights were equal;
-* beam likelihoods were **summed** instead of multiplied, and the max-range term returned 8000 instead of 1;
-* the ray caster never reset per beam, only stepped in +x, looped forever at slope 1 and reused stale hits;
-* the likelihood-field model used an undefined variable, transposed the grid and ignored the measured range;
-* initial x/y ranges were swapped and in cells, headings stepped in whole radians, weights started at 1;
-* motion-noise α's were used as standard deviations (they are variances) and set to 10⁻⁶;
-* both odometry streams were interleaved (finding 8);
-* resampling ran every step on unnormalised weights;
-* hard-coded absolute Windows paths, and a notebook that was an HTML page saved as `.ipynb`.
 
 ## References
 

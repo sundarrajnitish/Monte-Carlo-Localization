@@ -101,13 +101,13 @@ Widgets.findings = (grid, D) => {
 
   /* F8 odometry streams ----------------------------------------------------- */
   const os = rt.odometry_streams, ir = rt.interleaved_run;
-  const c8 = card('8 · A data bug hiding in plain sight',
-    `The log carries odometry twice: in <code>O</code> records and stamped on each <code>L</code> (laser) record. The stamped pose lags the odometry stream by about one reading. Sorting both by time and feeding them to the motion model, as the 2023 code did, makes the robot shuffle back and forth: the path doubles and the motion model is asked to explain hundreds of reversals. Using one stream fixes it; the filter here uses the laser-stamped pose, which is the pose the scan was actually taken at.`);
+  const c8 = card('8 · Picking the right odometry stream',
+    `The log carries odometry twice: in <code>O</code> records and stamped on each <code>L</code> (laser) record. The stamped pose lags the odometry stream by about one reading. Merging both by timestamp would make the robot appear to shuffle back and forth: the path doubles and the motion model would be asked to explain hundreds of reversals that never happened. The filter therefore uses one stream, the laser-stamped pose, which is the pose each scan was actually taken at.`);
   const tb2 = document.createElement('div'); tb2.className = 'table-wrap';
   tb2.innerHTML = `<table><thead><tr><th>odometry used</th><th class="num">path length</th><th class="num">apparent reversals</th></tr></thead><tbody>` +
-    [['O records only', os['O only']], ['L records only', os['L only']], ['both, interleaved', os.interleaved]].map(([n, v]) =>
+    [['O records only', os['O only']], ['L records only', os['L only']], ['both, merged by time', os.interleaved]].map(([n, v]) =>
       `<tr><td>${n}</td><td class="num">${(v.path_cm / 100).toFixed(1)} m</td><td class="num">${v.reversals}</td></tr>`).join('') + '</tbody></table>' +
-    `<p class="small muted" style="margin:10px 0 0">On this log the scans still pull the filter back each step, so the damage is limited (mean particle spread ${ir.mean_spread.toFixed(1)} cm interleaved vs ${ir.mean_spread_laser.toFixed(1)} cm with one stream), but the motion model is being fed motion that never happened.</p>`;
+    `<p class="small muted" style="margin:10px 0 0">On this log the scans still pull the filter back each step, so the damage is limited (mean particle spread ${ir.mean_spread.toFixed(1)} cm merged vs ${ir.mean_spread_laser.toFixed(1)} cm with one stream), but the motion model is being fed motion that never happened.</p>`;
   c8.appendChild(tb2);
 
   let rt2;
